@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>My Scatterplot App</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script src="plotly-2.29.1.min.js" charset="utf-8"></script>
+    <script src="index.js" type="module"></script>
+    <style>
+        #umapContainerRegl {
+            display: flex;
+            flex-direction: row;
+            margin-top: 50px;
+        }
+        #legendContainer {
+            margin-left: 50px;
+            margin-top: 50px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            margin-right: 5px;
+        }
+
+        .legend-text {
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="fileInput" accept=".h5mu">
+    <button id="drawUmapButtonRegl">Draw Regl UMAP</button>
+    <button id="drawUmapButtonPlotly">Draw Plotly UMAP</button>
+    <div id="umapContainerPlotly" width="600" height="600">
+    </div>
+    <div id="umapContainerRegl">
+        <canvas id="canvas" width="600" height="600">
+        </canvas>
+    </div>
+    <div id="pointHover">
+    </div>
+    <div id="pointsSelect">
+    </div>
+    
+</body>
+</html>
