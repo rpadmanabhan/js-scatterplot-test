@@ -27,9 +27,6 @@ class SingleCellAnalysis:
         self.h5mu_obj = None
         self.unique_cell_types = None
 
-    def add(self, x, y):
-        return x + y
-    
     def load_h5mu(self, h5mu_file):
         LOGGER.info('Entered func')
         self.h5mu_obj = muon.read_h5mu(h5mu_file)
@@ -38,65 +35,6 @@ class SingleCellAnalysis:
     def return_num_cells(self):
         return self.h5mu_obj.shape[0]
     
-    def return_umap_coords(self):
-        LOGGER.info('Entered func')
-        umap_x = self.h5mu_obj["rna"].obsm['X_umap'][:, 0]
-        umap_y = self.h5mu_obj["rna"].obsm['X_umap'][:, 1]
-        cell_types = self.h5mu_obj["rna"].obs['Cell_Type_Experimental']
-        LOGGER.info('Ended func')
-        return umap_x.tolist(), umap_y.tolist(), cell_types.tolist()
-
-    def return_normalized_umap_coords_naive(self):
-        LOGGER.info('Entered func')
-        umap_x = self.h5mu_obj["rna"].obsm['X_umap'][:, 0]
-        umap_y = self.h5mu_obj["rna"].obsm['X_umap'][:, 1]
-        cell_types = self.h5mu_obj["rna"].obs['Cell_Type_Experimental']
-        # Calculate the minimum and maximum values for umap_x and umap_y
-        min_x, max_x = np.min(umap_x), np.max(umap_x)
-        min_y, max_y = np.min(umap_y), np.max(umap_y)
-        # Normalize umap_x and umap_y to the range [-1, 1]
-        normalized_umap_x = 2 * ((umap_x - min_x) / (max_x - min_x)) - 1
-        normalized_umap_y = 2 * ((umap_y - min_y) / (max_y - min_y)) - 1
-        # Return the normalized UMAP coordinates along with cell types
-        LOGGER.info('Ended func')
-        return normalized_umap_x.tolist(), normalized_umap_y.tolist(), cell_types.tolist()
-    
-    def return_normalized_umap_coords(self):
-        LOGGER.info('Entered func')
-
-        umap_coords = self.h5mu_obj["rna"].obsm['X_umap']
-        cell_types = self.h5mu_obj["rna"].obs['Cell_Type_Experimental']
-
-        # Find min and max values for both x and y
-        min_vals = np.min(umap_coords, axis=0)
-        max_vals = np.max(umap_coords, axis=0)
-
-        # Calculate scaling factors for both x and y
-        scale_factors = 2 / (max_vals - min_vals)
-
-        # Perform min-max scaling
-        normalized_umap_coords = ((umap_coords - min_vals) * scale_factors) - 1
-
-        # Get unique cell types
-        unique_cell_types = sorted(set(cell_types))
-
-        # Create a dictionary mapping cell types to integers
-        cell_type_to_int = {cell_type: idx for idx, cell_type in enumerate(unique_cell_types)}
-
-        # Map strings to integers
-        cell_types_mapped_to_int = [cell_type_to_int[cell_type] for cell_type in cell_types]
-
-        # Return the normalized UMAP coordinates along with cell types
-        LOGGER.info('Ended func')
-        return (
-            normalized_umap_coords[:,0].tolist(),
-            normalized_umap_coords[:,1].tolist(),
-            cell_types_mapped_to_int,
-            unique_cell_types,
-            self.h5mu_obj["rna"].obs_names.tolist()
-        )
-
-
     def return_normalized_umap_coords_pyarrow(self):
         ''' Return umap coords stored in the ann data obj
         '''
