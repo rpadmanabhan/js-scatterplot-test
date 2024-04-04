@@ -8,6 +8,7 @@
     "author": "Your Name",
     "license": "MIT",
     "dependencies": {
+        "apache-arrow": "^15.0.2",
         "express": "^4.19.1",
         "http-server": "^14.1.1",
         "regl-scatterplot": "^1.8.5",

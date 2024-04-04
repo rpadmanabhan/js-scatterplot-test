@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { Table, RecordBatchReader, tableFromIPC } from 'apache-arrow';
 import xmlrpc from 'xmlrpc';
 import createScatterplot from 'regl-scatterplot';
 
@@ -23,6 +25,7 @@ const client = xmlrpc.createClient({ host: 'localhost', port: 8000, path: '/RPC2
 // Loads the h5mu file by sending a 'load_h5mu' method call
 function loadH5MU(file) {
     // Call the load_h5mu method on the server with the file path
+    console.log('Starting to load H5MU file');
     client.methodCall('load_h5mu', [file.name], function(error, result) {
         if (error)
         {
@@ -88,7 +91,7 @@ async function displayUMAPRegl() {
     // Record the start time before RPC call
     var startTime = performance.now();
     const umapData = await new Promise((resolve, reject) => {
-        client.methodCall('return_normalized_umap_coords', [], function(error, data) {
+        client.methodCall('return_normalized_umap_coords_pyarrow', [], function(error, data) {
             if (error) {
                 console.error('Error:', error);
                 reject(error); // Reject the promise if there's an error
@@ -97,7 +100,18 @@ async function displayUMAPRegl() {
                 const endTime = performance.now();
                 const timeTaken = endTime - startTime;
                 console.log('Time taken for RPC call (ms):', timeTaken);
-                resolve(data); // Resolve the promise with the data
+
+                // Convert Arrow arrays to JavaScript arrays
+                const table = tableFromIPC(data[0]);
+                console.log(data[1]);
+                // Resolve the promise with the structured umapData array
+                resolve([
+                    table.data[0].children[0].values,
+                    table.data[0].children[1].values,
+                    table.data[0].children[2].values,
+                    data[1],
+                    table.data[0].children[3].values,
+                ]);
             }
         });
     });
@@ -174,24 +188,25 @@ async function displayUMAPRegl() {
     const cellTypes = umapData[3];
 
     // Create legend elements dynamically based on cellTypes and cellTypeColors
-    cellTypes.forEach((cellType, index) => {
+    for (let index = 0; index < cellTypes.length; index++) {
+        const cellType = cellTypes[index];
+    
         const legendItem = document.createElement('div');
         legendItem.classList.add('legend-item');
-
+    
         const legendColor = document.createElement('div');
         legendColor.classList.add('legend-color');
         legendColor.style.backgroundColor = cellTypeColors[index];
-
+    
         const legendText = document.createElement('div');
         legendText.classList.add('legend-text');
         legendText.textContent = cellType;
-
+    
         legendItem.appendChild(legendColor);
         legendItem.appendChild(legendText);
         legendContainer.appendChild(legendItem);
-    });
+    }
     console.log('Done drawing scatter plot');
-
 }
 
 // Attach change event listener to file input element.

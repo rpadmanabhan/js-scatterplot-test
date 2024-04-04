@@ -1,4 +1,5 @@
 # standard lib
+from io import BytesIO
 import logging
 from xmlrpc.server import SimpleXMLRPCServer
 from xmlrpc.server import SimpleXMLRPCRequestHandler
@@ -10,6 +11,7 @@ import scanpy as sc
 import plotly.offline as po
 import plotly.graph_objs as go
 import plotly.express as px
+import pyarrow as pa
 
 # Some basic LOGGER
 # -------------------------------------------------------------------------------------------------
@@ -104,6 +106,7 @@ class BackendService:
         cell_types_mapped_to_int = [cell_type_to_int[cell_type] for cell_type in cell_types]
 
         # Return the normalized UMAP coordinates along with cell types
+        LOGGER.info('Ended func')
         return (
             normalized_umap_coords[:,0].tolist(),
             normalized_umap_coords[:,1].tolist(),
@@ -111,6 +114,108 @@ class BackendService:
             unique_cell_types,
             self.h5mu_obj["rna"].obs_names.tolist()
         )
+
+
+    def return_normalized_umap_coords_pyarrow(self):
+        LOGGER.info('Entered func')
+
+        umap_coords = self.h5mu_obj['rna'].obsm['X_umap']
+        cell_types = self.h5mu_obj['rna'].obs['Cell_Type_Experimental']
+
+        # Find min and max values for both x and y
+        min_vals = np.min(umap_coords, axis=0)
+        max_vals = np.max(umap_coords, axis=0)
+
+        # Calculate scaling factors for both x and y
+        scale_factors = 2 / (max_vals - min_vals)
+
+        # Perform min-max scaling
+        normalized_umap_coords = ((umap_coords - min_vals) * scale_factors) - 1
+
+        # Get unique cell types
+        unique_cell_types = sorted(set(cell_types))
+
+        # Create a dictionary mapping cell types to integers
+        cell_type_to_int = {cell_type: idx for idx, cell_type in enumerate(unique_cell_types)}
+
+        # Map strings to integers
+        cell_types_mapped_to_int = [cell_type_to_int[cell_type] for cell_type in cell_types]
+
+        data = [
+            pa.array(normalized_umap_coords[:,0]),
+            pa.array(normalized_umap_coords[:,1]),
+            pa.array(cell_types_mapped_to_int, type = pa.int32()),
+            pa.array(self.h5mu_obj["rna"].obs_names)
+        ]
+
+        # Serialize the Arrow data
+        arrow_data = pa.record_batch(
+            data,
+            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'obs_names']
+        )
+        sink = pa.BufferOutputStream()
+
+        with pa.ipc.new_stream(sink, arrow_data.schema) as writer:
+            writer.write(arrow_data)
+
+        LOGGER.info('Ended func')
+        return sink.getvalue().to_pybytes(), unique_cell_types
+
+
+
+    def return_normalized_umap_coords_pyarrow_(self):
+        LOGGER.info('Starting func')
+
+        N = 5_000_000
+        K = 8
+        D = 2
+        cell_types = ["B", "Dendritic", "Monocyte_classical", "T_CD4_memory", "T_CD4_naive", "T_CD8_memory", "T_CD8_naive", "T_gamma_delta"]
+        
+        cluster_cell_types = cell_types[:K]
+        
+        # Random cluster centers within the range [-1, 1]
+        centers = np.random.uniform(-100, 100, size=(K, D))
+        
+        # Random cluster covariances to create tight clusters
+        covariances = np.array([[[np.random.uniform(2, 5), 0], [0, np.random.uniform(2, 5)]] for _ in range(K)])
+        
+        # Divide the total number of points equally among the clusters
+        points_per_cluster = N // K
+        
+        # Generate points for each cluster
+        points = []
+        cluster_ids = []
+        for k in range(K):
+            cluster_points = np.random.multivariate_normal(centers[k], covariances[k], points_per_cluster)
+            points.extend(cluster_points)
+            cluster_ids.extend([k] * points_per_cluster)
+
+        points = np.array(points)
+        # Scale points to the [-1, 1] interval
+        min_vals = np.min(points, axis=0)
+        max_vals = np.max(points, axis=0)
+        scale_factors = 2 / (max_vals - min_vals)
+        normalized_points = ((points - min_vals) * scale_factors) - 1
+
+
+        data = [
+            pa.array(normalized_points[:,0]),
+            pa.array(normalized_points[:,1]),
+            pa.array(cluster_ids, type = pa.int32()),
+            pa.array(np.arange(0, N))
+        ]
+        # Serialize the Arrow data
+        arrow_data = pa.record_batch(
+            data,
+            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'obs_names']
+        )
+        sink = pa.BufferOutputStream()
+
+        with pa.ipc.new_stream(sink, arrow_data.schema) as writer:
+            writer.write(arrow_data)
+
+        LOGGER.info('Ended func')
+        return sink.getvalue().to_pybytes(), cell_types
 
 
     def return_umap_scatter_html(self):
