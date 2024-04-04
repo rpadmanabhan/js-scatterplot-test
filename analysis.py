@@ -134,7 +134,7 @@ class SingleCellAnalysis:
         # Serialize the Arrow data
         arrow_data = pa.record_batch(
             data,
-            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'obs_names']
+            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'cell_indices']
         )
         sink = pa.BufferOutputStream()
 
