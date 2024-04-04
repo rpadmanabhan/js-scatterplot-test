@@ -21,7 +21,7 @@ node server.js
 ```
 
 ## To test the 5M simulated dataset
-Uncomment the below line in `index.js` (and comment out the one):
+Uncomment the below line in `index.js` (and comment out the other line):
 
 ```//const table = await tableFromIPC(fetch("http://localhost:3002/return_simulated_normalized_umap_coords_pyarrow"));```
 
