@@ -1,13 +1,9 @@
 # standard lib
-from io import BytesIO
 import logging
-from xmlrpc.server import SimpleXMLRPCServer
-from xmlrpc.server import SimpleXMLRPCRequestHandler
 
 # 3rd party
 import muon
 import numpy as np
-import scanpy as sc
 import plotly.offline as po
 import plotly.graph_objs as go
 import plotly.express as px
@@ -26,25 +22,10 @@ LOGGER.addHandler(handler)
 LOGGER.setLevel(logging.INFO)
 
 
-class RequestHandler(SimpleXMLRPCRequestHandler):
-    # Restrict to a particular path.
-    rpc_paths = ('/RPC2',)
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.end_headers()
-
-    # cors headers
-    def end_headers(self) -> None:
-        self.send_header(
-                "Access-Control-Allow-Headers",
-                "Origin, X-Requested-With, Content-Type, Accept")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        SimpleXMLRPCRequestHandler.end_headers(self)
-
-class BackendService:
+class SingleCellAnalysis:
     def __init__(self):
         self.h5mu_obj = None
+        self.unique_cell_types = None
 
     def add(self, x, y):
         return x + y
@@ -117,11 +98,15 @@ class BackendService:
 
 
     def return_normalized_umap_coords_pyarrow(self):
+        ''' Return umap coords stored in the ann data obj
+        '''
         LOGGER.info('Entered func')
 
         umap_coords = self.h5mu_obj['rna'].obsm['X_umap']
         cell_types = self.h5mu_obj['rna'].obs['Cell_Type_Experimental']
 
+        # Get points into Normalized Device coordinates (NDS) i.e. in a [-1, 1] range - this is needed by the library
+        #-----------------------------------------------------------------------------
         # Find min and max values for both x and y
         min_vals = np.min(umap_coords, axis=0)
         max_vals = np.max(umap_coords, axis=0)
@@ -132,6 +117,8 @@ class BackendService:
         # Perform min-max scaling
         normalized_umap_coords = ((umap_coords - min_vals) * scale_factors) - 1
 
+        # The scatterplot library wants integer labels for coloring so convert string cell types to 0, 1, 2, ... 8 integers
+        #-----------------------------------------------------------------------------
         # Get unique cell types
         unique_cell_types = sorted(set(cell_types))
 
@@ -151,7 +138,7 @@ class BackendService:
         # Serialize the Arrow data
         arrow_data = pa.record_batch(
             data,
-            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'obs_names']
+            names = ['umap_coords_X', 'umap_coords_Y', 'cell_types', 'cell_indices']
         )
         sink = pa.BufferOutputStream()
 
@@ -159,19 +146,21 @@ class BackendService:
             writer.write(arrow_data)
 
         LOGGER.info('Ended func')
-        return sink.getvalue().to_pybytes(), unique_cell_types
+        self.unique_cell_types = unique_cell_types
+        return sink.getvalue().to_pybytes()
+        #return sink.getvalue().to_pybytes(), unique_cell_types
 
 
-
-    def return_normalized_umap_coords_pyarrow_(self):
+    def return_simulated_normalized_umap_coords_pyarrow(self):
+        '''Simulate a cluster of points from a multivariate normal distribution.
+        '''
         LOGGER.info('Starting func')
-
         N = 5_000_000
         K = 8
         D = 2
-        cell_types = ["B", "Dendritic", "Monocyte_classical", "T_CD4_memory", "T_CD4_naive", "T_CD8_memory", "T_CD8_naive", "T_gamma_delta"]
-        
-        cluster_cell_types = cell_types[:K]
+        # N => # of points
+        # K => # of clusters
+        # D => Dimensionality
         
         # Random cluster centers within the range [-1, 1]
         centers = np.random.uniform(-100, 100, size=(K, D))
@@ -196,7 +185,7 @@ class BackendService:
         max_vals = np.max(points, axis=0)
         scale_factors = 2 / (max_vals - min_vals)
         normalized_points = ((points - min_vals) * scale_factors) - 1
-
+        LOGGER.info(f'Done simulating {N} points, serializing to Apache Arrow IPC format')
 
         data = [
             pa.array(normalized_points[:,0]),
@@ -215,7 +204,11 @@ class BackendService:
             writer.write(arrow_data)
 
         LOGGER.info('Ended func')
-        return sink.getvalue().to_pybytes(), cell_types
+        unique_cell_types = ["B", "Dendritic", "Monocyte_classical", "T_CD4_memory", "T_CD4_naive", "T_CD8_memory", "T_CD8_naive", "T_gamma_delta"]    
+        self.unique_cell_types = unique_cell_types
+        return sink.getvalue().to_pybytes()
+
+        #return sink.getvalue().to_pybytes(), unique_cell_types
 
 
     def return_umap_scatter_html(self):
@@ -266,15 +259,3 @@ class BackendService:
         plotly_html = po.plot(fig, include_plotlyjs=False, output_type='div')
         LOGGER.info('Ended func')
         return plotly_html
-
-if __name__ == '__main__':
-    # Create server
-    with SimpleXMLRPCServer(('localhost', 8000),
-                            requestHandler=RequestHandler, allow_none=True) as server:
-        server.register_introspection_functions()
-
-        server.register_instance(BackendService())
-
-        # Run the server's main loop
-        print("Server is running on port 8000...")
-        server.serve_forever()

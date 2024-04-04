@@ -1,6 +1,4 @@
-import { readFileSync } from 'fs';
-import { Table, RecordBatchReader, tableFromIPC } from 'apache-arrow';
-import xmlrpc from 'xmlrpc';
+import { tableFromIPC } from 'apache-arrow';
 import createScatterplot from 'regl-scatterplot';
 
 function getCurrentTimestamp() {
@@ -19,59 +17,59 @@ console.log = function() {
 };
 
 
-// RPC client for communicating with the python backend.
-const client = xmlrpc.createClient({ host: 'localhost', port: 8000, path: '/RPC2' });
 
-// Loads the h5mu file by sending a 'load_h5mu' method call
 function loadH5MU(file) {
-    // Call the load_h5mu method on the server with the file path
     console.log('Starting to load H5MU file');
-    client.methodCall('load_h5mu', [file.name], function(error, result) {
-        if (error)
-        {
+    
+    // Prepare form data with file object
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // Send POST request to the server
+    fetch('http://localhost:3002/load_h5mu', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('HTTP request failed');
+        }
+        return response.json();
+    })
+    .then(result => {
+        console.log('H5MU file loaded successfully:', result);
+
+        // Once loaded, test if data object is saved correctly
+        fetch('http://localhost:3002/return_num_cells')
+        .then(response => response.json())
+        .then(numCells => {
+            console.log('Number of cells:', numCells);
+        })
+        .catch(error => {
             console.error('Error:', error);
-        }
-        else {
-            console.log('H5MU file loaded successfully:', result);
-            // Once loaded, test if data object is saved
-            client.methodCall('return_num_cells', [], function(error, numCells) {
-                if (error) {
-                    console.error('Error:', error);
-                } else {
-                    console.log('Number of cells:', numCells);
-                }
-            });
-        }
+        });
+    })
+    .catch(error => {
+        console.error('Error:', error);
     });
 }
 
 
-// Gets the plotly html using 'return_umap_scatter_html' call and displays that html.
-function displayUMAPPlotly() {
-    // Record the start time before RPC call
+async function displayUMAPPlotly() {
     var startTime = performance.now();
+    // Make HTTP request to get the plotly html div
+    const plotly_div = await (await fetch("http://localhost:3002/return_plotly_html_div")).json();
+    var endTime = performance.now();
+    var timeTaken = endTime - startTime;
+    console.log('Time taken for HTTP request (ms):', timeTaken)
 
-    // Call the return_umap_scatter_html method on the server
-    client.methodCall('return_umap_scatter_html', [], function(error, htmlContent) {
-        if (error) {
-            console.error('Error:', error);
-        }
-        else {
-            // Calculate the time taken for the RPC call
-            var endTime = performance.now();
-            var timeTaken = endTime - startTime;
-            console.log('Time taken for RPC call (ms):', timeTaken);
-
-            // Get the size of the htmlContent string
-            console.log('Length of htmlContent:', htmlContent.length);
-
-            //console.log('Received HTML content: ', htmlContent);
-            
-            // Append the received HTML content to the umapContainerPlotly using jQuery
-            $('#umapContainerPlotly').append(htmlContent);
-            console.log('Done placing html content to div');
-        }
-    });
+    // Get the size of the plotly_div string
+    console.log('Length of plotly_div:', plotly_div.length);
+    //console.log('Received HTML content: ', plotly_div);
+    
+    // Append the received HTML content to the umapContainerPlotly using jQuery
+    $('#umapContainerPlotly').append(plotly_div);
+    console.log('Done placing html content to div');
 }
 
 
@@ -87,41 +85,32 @@ async function displayUMAPRegl() {
         performanceMode: false
     });  
 
-    console.log("Making RPC call");
-    // Record the start time before RPC call
-    var startTime = performance.now();
-    const umapData = await new Promise((resolve, reject) => {
-        client.methodCall('return_normalized_umap_coords_pyarrow', [], function(error, data) {
-            if (error) {
-                console.error('Error:', error);
-                reject(error); // Reject the promise if there's an error
-            } else {
-                // Calculate the time taken for the RPC call
-                const endTime = performance.now();
-                const timeTaken = endTime - startTime;
-                console.log('Time taken for RPC call (ms):', timeTaken);
+    console.log("Making HTTP request");
 
-                // Convert Arrow arrays to JavaScript arrays
-                const table = tableFromIPC(data[0]);
-                console.log(data[1]);
-                // Resolve the promise with the structured umapData array
-                resolve([
-                    table.data[0].children[0].values,
-                    table.data[0].children[1].values,
-                    table.data[0].children[2].values,
-                    data[1],
-                    table.data[0].children[3].values,
-                ]);
-            }
-        });
-    });
+    // Get the x,y, cell_types (as ints) and cell indices for the umap plot
+    const table = await tableFromIPC(fetch("http://localhost:3002/return_normalized_umap_coords_pyarrow"));
+    // To test 5M points:
+    //const table = await tableFromIPC(fetch("http://localhost:3002/return_simulated_normalized_umap_coords_pyarrow"));
+    console.log("Read HTTP return into apache arrow table")
 
+    // Get the cell types corresponding to the integer point labels
+    const cell_type_labels = await (await fetch("http://localhost:3002/unique_cell_types")).json();
+    
+    // create a umapData array with relevant info
+    const umapData = [
+        table.getChild('umap_coords_X').data[0].values,
+        table.getChild('umap_coords_Y').data[0].values,
+        table.getChild('cell_types').data[0].values,
+        table.getChild('cell_indices').data[0].values
+    ];
+
+    // function to handle hover action
     const pointoverHandler = (pointId) => {
         const x = umapData[0][pointId];
         const y = umapData[1][pointId];
         const category = umapData[2][pointId];
-        const cell_type = umapData[3][category];
-        const cell_id = umapData[4][pointId];
+        const cell_type = cell_type_labels[category];
+        const cell_id = umapData[3][pointId];        
 
         // Update the content of the #pointHover div
         const pointInfoDiv = document.getElementById('pointHover');
@@ -133,6 +122,7 @@ async function displayUMAPRegl() {
         `;
       };
 
+    // function to handle selection action
     const selectHandler = ({points: selectedPoints}) => {
         const pointsSelectDiv = document.getElementById('pointsSelect');
         pointsSelectDiv.innerHTML = `
@@ -140,6 +130,7 @@ async function displayUMAPRegl() {
         `;
     }
 
+    // function for deselect action
     const deselectHandler = () => {
         const pointsSelectDiv = document.getElementById('pointsSelect');
         pointsSelectDiv.innerHTML = '';
@@ -184,12 +175,9 @@ async function displayUMAPRegl() {
     // Clear previous content
     legendContainer.innerHTML = '';
 
-    // Assuming umapData[3] contains the cell types associated with the colors
-    const cellTypes = umapData[3];
-
-    // Create legend elements dynamically based on cellTypes and cellTypeColors
-    for (let index = 0; index < cellTypes.length; index++) {
-        const cellType = cellTypes[index];
+    // Create legend elements dynamically based on cell_type_labels
+    for (let index = 0; index < cell_type_labels.length; index++) {
+        const cellType = cell_type_labels[index];
     
         const legendItem = document.createElement('div');
         legendItem.classList.add('legend-item');
