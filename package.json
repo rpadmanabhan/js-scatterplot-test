@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "description": "A simple scatterplot application using regl-scatterplot module",
     "scripts": {
-        "build": "webpack --mode=production"
+        "build": "npx parcel build index.html"
     },
     "author": "Your Name",
     "license": "MIT",
@@ -11,7 +11,7 @@
         "apache-arrow": "^15.0.2",
         "express": "^4.19.1",
         "http-server": "^14.1.1",
-        "regl-scatterplot": "^1.8.5",
+        "regl-scatterplot": "^1.8.5"
     },
     "devDependencies": {
         "assert": "^2.1.0",
